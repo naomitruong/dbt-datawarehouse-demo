@@ -1,0 +1,31 @@
+dwh_ecopay_transaction_detail:
+  target: dev
+  outputs:
+    # BigQuery connection. Both targets authenticate with a service-account keyfile.
+    # schema resolution is handled by the generate_schema_name override (macros/get_custom_schema.sql):
+    #   - prod  -> clean dataset names (staging / core / mart) via generate_schema_name_for_env
+    #   - dev   -> {default_schema}_{custom}  (e.g. dwh_staging, dwh_core, dwh_mart)
+    # NB: on BigQuery a dbt "schema" is a *dataset*; `dataset` and `schema` are interchangeable keys.
+    prod:
+      type: bigquery
+      method: service-account
+      keyfile: "{{ var('DBT_KEYFILE') }}"          # absolute path to the service-account JSON key
+      project: "{{ var('DBT_PROJECT') }}"          # GCP project id
+      dataset: "{{ var('DBT_DATASET', 'dwh') }}"   # base dataset -> resolved per layer by generate_schema_name
+      location: "{{ var('DBT_LOCATION', 'asia-southeast1') }}"
+      threads: 10
+      priority: interactive
+      job_execution_timeout_seconds: 600
+      job_retries: 1
+
+    dev:
+      type: bigquery
+      method: service-account
+      keyfile: "{{ env_var('DBT_KEYFILE', '~/.config/gcloud/dbt-bigquery-keyfile.json') }}"
+      project: "{{ env_var('DBT_PROJECT', 'my-gcp-project') }}"
+      dataset: "{{ env_var('DBT_DATASET', 'dwh') }}"
+      location: "{{ env_var('DBT_LOCATION', 'asia-southeast1') }}"
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 600
+      job_retries: 1

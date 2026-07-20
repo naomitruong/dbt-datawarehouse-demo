@@ -1,0 +1,5 @@
+version: 2
+
+models:
+  - name: dim_ecopay_stores
+    description: Dimension table for ecopay store with deduplication based on id

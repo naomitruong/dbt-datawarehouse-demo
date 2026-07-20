@@ -1,0 +1,62 @@
+version: 2
+
+models:
+  - name: dwh_ecopay_transaction_detail
+    description: >
+      Incremental mart for Ecopay transaction detail (GMV, service fees) for transactions with a
+      store_code and status paid/success/paid_processing, within a rolling 2-month window. Salesman and
+      manager hierarchy are resolved via dm_dms1_user_manager_phones matched on the ecopay store
+      sale_info phone. Incremental logic refreshes rows when the transaction, store, or any
+      salesman/manager in the hierarchy changes (including deactivation).
+    columns:
+      - name: transid
+        description: "Ecopay transaction identifier (incremental unique key)."
+        tests:
+          - not_null
+          - unique
+      - name: transaction_date
+        description: "Partner payment timestamp (partner_payment_at)."
+      - name: agent_name
+        description: "Direct manager (agent) name, matched via ecopay store sale_info phone."
+      - name: salesman_name
+        description: "Salesman display name, matched via ecopay store sale_info phone."
+      - name: hierarchy_phone
+        description: "Full phone hierarchy text[]: [salesman_phone, direct_manager_phone, ...]."
+      - name: salesman_phone
+        description: "Salesman phone from the ecopay store sale_info."
+      - name: agent_phone
+        description: "Direct manager (agent) phone. Null if the salesman has no manager."
+      - name: merchant_transaction_code
+        description: "Merchant code recorded on the transaction (et.merchant_code)."
+      - name: merchant_name
+        description: "Store display name from dim_ecopay_stores."
+      - name: merchant_code
+        description: "Store code from dim_ecopay_stores."
+      - name: merchant_created_date
+        description: "Store created_at from dim_ecopay_stores."
+      - name: merchant_onboarding_date
+        description: "Store approved_at (onboarding) from dim_ecopay_stores."
+      - name: gmv
+        description: "Transaction amount (GMV)."
+        tests:
+          - not_null
+      - name: commission
+        description: "Commission amount (currently fixed at 0)."
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "= 0"
+      - name: services_fee
+        description: "Service fee (source total_fee)."
+      - name: source_inserted_at
+        description: "Watermark from dim_ecopay_transactions.inserted_at."
+        tests:
+          - not_null
+      - name: dim_users_ts
+        description: "Watermark from dm_dms1_user_manager_phones.inserted_at."
+      - name: dim_stores_ts
+        description: "Watermark from dim_ecopay_stores.inserted_at."
+      - name: inserted_at
+        description: "Timestamp when this mart row was loaded."
+        tests:
+          - not_null

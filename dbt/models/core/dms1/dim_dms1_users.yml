@@ -1,0 +1,5 @@
+version: 2
+
+models:
+  - name: dim_dms1_users
+    description: Dimension table for dms1 users with deduplication based on id

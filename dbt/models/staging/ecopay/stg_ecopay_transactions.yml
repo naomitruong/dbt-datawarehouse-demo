@@ -1,0 +1,39 @@
+version: 2
+
+sources:
+  - name: json_raw
+    tables:
+      - name: ecopay_ecopay_transactions
+
+models:
+  - name: stg_ecopay_transactions
+    description: This model contains data about ecopay transactions
+    columns:
+      - name: id
+        description: "Transaction unique identifier. Null rows are kept in staging but excluded from dim_ecopay_transactions."
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      - name: ts_ms
+        description: "CDC event timestamp in milliseconds"
+        tests:
+          - not_null
+      - name: json_inserted_at
+        description: "Timestamp when the record was inserted into json_raw"
+        tests:
+          - not_null
+      - name: inserted_at
+        description: "Timestamp when this model was run"
+        tests:
+          - not_null
+      - name: op
+        description: "CDC operation type"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['c', 'u', 'd', 'r']
+      - name: manager_team_id
+        description: "ID of the manager team responsible for the transaction (ObjectId reference)"
+      - name: settlement_at
+        description: "Timestamp when the transaction was settled"

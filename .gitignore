@@ -1,0 +1,11 @@
+target/
+dbt_packages/
+logs/
+__pycache__/
+.user.yml
+venv/
+/dbt/venv/
+
+
+
+

@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: json_raw
+    tables:
+      - name: dms1_users
+
+models:
+  - name: stg_dms1_users
+    description: This model contains data about dms1 users

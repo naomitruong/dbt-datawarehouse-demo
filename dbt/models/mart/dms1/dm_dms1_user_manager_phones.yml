@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: dm_dms1_user_manager_phones
+    description: >
+      Recursive manager hierarchy for each user in dim_dms1_users, built by walking up the
+      direct_manager chain. Cycle detection is applied via a visited-nodes array to prevent
+      infinite loops from circular direct_manager references. Used by dm_dms1_stores_salesman_info
+      to construct hierarchy_phone.
+    columns:
+      - name: user_phone
+        description: "Salesman phone from dim_dms1_users.phone; unique per row, used as join key by downstream models."
+        tests:
+          - not_null
+          - unique
+      - name: user_name
+        description: "Salesman display name from dim_dms1_users.name."
+      - name: hierarchy_phone
+        description: "Full phone hierarchy as text[]: [user_phone, direct_manager_phone, manager+1_phone, ...]. Salesman's own phone is always index [1]."
+      - name: agent_phone
+        description: "Direct manager (agent) phone; manager_phones[1]. Null if salesman has no manager."
+      - name: agent_name
+        description: "Direct manager (agent) display name; manager_names[1]. Null if salesman has no manager."
+      - name: source_inserted_at
+        description: "Latest inserted_at from dim_dms1_users for the phone group; used as watermark by downstream incremental models."
+      - name: inserted_at
+        description: "Timestamp when this mart row was loaded."

@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: json_raw
+    tables:
+      - name: ecopay_ecopay_stores
+
+models:
+  - name: stg_ecopay_stores
+    description: This model contains data about ecopay stores

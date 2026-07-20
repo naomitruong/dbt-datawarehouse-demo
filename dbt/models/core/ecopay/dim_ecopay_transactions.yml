@@ -1,0 +1,5 @@
+version: 2
+
+models:
+  - name: dim_ecopay_transactions
+    description: Dimension table for ecopaay transactions with deduplication based on id
