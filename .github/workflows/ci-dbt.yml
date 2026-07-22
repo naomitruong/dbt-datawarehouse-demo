@@ -1,0 +1,28 @@
+steps:
+  - uses: actions/checkout@v4
+
+  - id: auth
+    uses: google-github-actions/auth@v2
+    with:
+      workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+      service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+  - uses: google-github-actions/setup-gcloud@v2
+
+  - uses: actions/setup-python@v5
+    with:
+      python-version: "3.11"
+
+  - run: |
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt
+
+  - run: gcloud auth list
+
+  - run: gcloud config set project ${{ vars.GCP_PROJECT_ID }}
+
+  - run: bq query --use_legacy_sql=false "SELECT CURRENT_DATE()"
+
+  - run: dbt deps
+
+  - run: dbt parse
