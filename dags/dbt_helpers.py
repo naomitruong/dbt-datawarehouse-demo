@@ -1,36 +1,13 @@
-"""Shared helpers for running the dbt project from Airflow.
-
-The DAGs run in two environments off the *same* code:
-
-- **Local Airflow** (docker-compose, day-to-day dev) — dbt is installed in the
-  Airflow image, BigQuery auth uses a mounted keyfile, and the Airflow Variable
-  ``dbt_target`` is set to ``dev`` so runs land in the dev datasets.
-- **Cloud Composer** (prod, when needed) — dbt is a PyPI package on the
-  environment, auth is the environment's service account (ADC), and
-  ``dbt_target`` is unset so it defaults to ``prod``.
-
-Design notes:
-
-- The dbt project is located at run time across layouts: Composer's
-  ``/home/airflow/gcs/data/dbt`` and the repo/local ``../dbt``.
-- All Airflow Variable lookups are deferred to *task run time* via Jinja
-  templating — never ``Variable.get`` at DAG-parse time — so parsing stays cheap.
-"""
-
+import logging
 import os
+import urllib.parse
+import urllib.request
 
-# Composer mounts its GCS bucket's data/ folder here on every worker.
+# Composer mounts its GCS bucket's data/ folder here on every worker
 _COMPOSER_DATA_DBT = "/home/airflow/gcs/data/dbt"
 
-# dbt --target. Defaults to `prod` (Cloud Composer). Local Airflow sets the
-# Airflow Variable `dbt_target` to `dev` (see local/docker-compose.yaml) so it
-# writes to the dev datasets instead of production.
 DBT_TARGET = "{{ var.value.get('dbt_target', 'prod') }}"
 
-# --vars payload consumed by the `prod` target in dbt/profiles.yml. project /
-# dataset / location come from the `profile_args_dwh_dbt` Airflow Variable. (The
-# `dev` target reads DBT_* env vars instead, so these vars are simply ignored
-# when running with --target dev.)
 DBT_VARS = (
     "{"
     '"DBT_PROJECT":"{{ var.json.profile_args_dwh_dbt.project }}",'
@@ -38,8 +15,6 @@ DBT_VARS = (
     '"DBT_LOCATION":"{{ var.json.profile_args_dwh_dbt.location }}"'
     "}"
 )
-
-
 def resolve_dbt_project_dir(dag_file: str) -> str:
     """Locate the dbt project across the Composer and local/repo layouts.
 
@@ -58,3 +33,36 @@ def resolve_dbt_project_dir(dag_file: str) -> str:
         if os.path.isdir(candidate):
             return os.path.abspath(candidate)
     return _COMPOSER_DATA_DBT
+
+
+def notify_telegram_on_failure(context):
+    from airflow.models import Variable
+    try:
+        token = Variable.get("telegram_bot_token", default_var="")
+        chat_id = Variable.get("telegram_chat_id", default_var="")
+        if not token or not chat_id:
+            logging.warning(
+                "Telegram alert skipped: telegram_bot_token / telegram_chat_id not set"
+            )
+            return
+
+        ti = context.get("task_instance")
+        text = (
+            "🔴 Airflow task FAILED\n"
+            f"DAG:   {ti.dag_id}\n"
+            f"Task:  {ti.task_id}\n"
+            f"Run:   {context.get('run_id')}\n"
+            f"Try:   {ti.try_number}\n"
+            f"Error: {str(context.get('exception'))[:400]}\n"
+            f"Log:   {ti.log_url}"
+        )
+        payload = urllib.parse.urlencode(
+            {"chat_id": chat_id, "text": text, "disable_web_page_preview": "true"}
+        ).encode()
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendMessage", data=payload
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+    except Exception as exc:  # never let the alert break the task
+        logging.warning("Telegram alert failed: %s", exc)
