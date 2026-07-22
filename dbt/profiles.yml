@@ -1,15 +1,18 @@
 dwh_ecopay_transaction_detail:
   target: dev
   outputs:
-    # BigQuery connection. Both targets authenticate with a service-account keyfile.
+    # BigQuery connection. Both targets use keyless auth via `method: oauth` /
+    # Application Default Credentials (prod = Composer SA, dev = gcloud ADC).
     # schema resolution is handled by the generate_schema_name override (macros/get_custom_schema.sql):
     #   - prod  -> clean dataset names (staging / core / mart) via generate_schema_name_for_env
     #   - dev   -> {default_schema}_{custom}  (e.g. dwh_staging, dwh_core, dwh_mart)
     # NB: on BigQuery a dbt "schema" is a *dataset*; `dataset` and `schema` are interchangeable keys.
     prod:
       type: bigquery
-      method: service-account
-      keyfile: "{{ var('DBT_KEYFILE') }}"          # absolute path to the service-account JSON key
+      # Cloud Composer: no keyfile. dbt uses Application Default Credentials
+      # provided natively by the Composer environment's service account. Just
+      # grant that SA roles/bigquery.dataEditor + roles/bigquery.jobUser.
+      method: oauth
       project: "{{ var('DBT_PROJECT') }}"          # GCP project id
       dataset: "{{ var('DBT_DATASET', 'dwh') }}"   # base dataset -> resolved per layer by generate_schema_name
       location: "{{ var('DBT_LOCATION', 'asia-southeast1') }}"
@@ -20,8 +23,9 @@ dwh_ecopay_transaction_detail:
 
     dev:
       type: bigquery
-      method: service-account
-      keyfile: "{{ env_var('DBT_KEYFILE', '~/.config/gcloud/dbt-bigquery-keyfile.json') }}"
+      # Local dev auth: keyless. Uses Application Default Credentials from
+      # `gcloud auth application-default login` (no service-account key file).
+      method: oauth
       project: "{{ env_var('DBT_PROJECT', 'my-gcp-project') }}"
       dataset: "{{ env_var('DBT_DATASET', 'dwh') }}"
       location: "{{ env_var('DBT_LOCATION', 'asia-southeast1') }}"

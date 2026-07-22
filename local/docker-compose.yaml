@@ -1,0 +1,100 @@
+# Local Airflow for day-to-day dev (LocalExecutor + Postgres — no Celery/Redis).
+# Runs the SAME DAGs that deploy to Cloud Composer; only the runtime differs:
+#   - dbt is installed via _PIP_ADDITIONAL_REQUIREMENTS (dev convenience)
+#   - BigQuery auth is keyless: your gcloud ADC is mounted in (run
+#     `gcloud auth application-default login` on the host first)
+#   - dbt_target=dev so runs land in the dev datasets, never production
+#
+# Usage (from the local/ folder):
+#   gcloud auth application-default login   # one-time, on the host
+#   cp .env.example .env    # then fill in GCP_PROJECT + AIRFLOW_UID
+#   docker compose up -d
+#   open http://localhost:8080   (admin / admin)
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.10.4
+  user: "${AIRFLOW_UID:-50000}:0"
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    # dbt installed into the Airflow image at container start (local dev only).
+    _PIP_ADDITIONAL_REQUIREMENTS: "dbt-bigquery==1.12.0"
+    # BigQuery auth via mounted gcloud ADC (keyless). GOOGLE_CLOUD_QUOTA_PROJECT
+    # avoids the "user must set a quota project" error with user credentials.
+    GOOGLE_APPLICATION_CREDENTIALS: /home/airflow/.config/gcloud/application_default_credentials.json
+    GOOGLE_CLOUD_QUOTA_PROJECT: ${GCP_PROJECT}
+    # The `dev` target's env_var() inputs (see dbt/profiles.yml).
+    DBT_PROJECT: ${GCP_PROJECT}
+    DBT_DATASET: ${DBT_DATASET:-dwh}
+    DBT_LOCATION: ${DBT_LOCATION:-asia-southeast1}
+    # Airflow Variables the DAGs read at run time (via AIRFLOW_VAR_<KEY>).
+    AIRFLOW_VAR_DBT_TARGET: dev
+    AIRFLOW_VAR_PROFILE_ARGS_DWH_DBT: '{"project":"${GCP_PROJECT}","dataset":"${DBT_DATASET:-dwh}","location":"${DBT_LOCATION:-asia-southeast1}"}'
+  volumes:
+    - ../dags:/opt/airflow/dags
+    - ../dbt:/opt/airflow/dbt
+    # Logs in a Docker-managed named volume (avoids host bind-mount permission
+    # issues; the Airflow UI still reads them). See `volumes:` at the bottom.
+    - airflow-logs:/opt/airflow/logs
+    # Your host gcloud config (contains the ADC file), mounted read-only.
+    - ${HOME}/.config/gcloud:/home/airflow/.config/gcloud:ro
+  depends_on: &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+    restart: always
+
+  airflow-init:
+    <<: *airflow-common
+    # Keep the image's default entrypoint (it registers a /etc/passwd entry for
+    # the arbitrary UID and fixes dir perms) and pass the init script as a
+    # `bash -c` command, which the entrypoint execs after that setup.
+    command:
+      - bash
+      - -c
+      - >
+        airflow db migrate &&
+        airflow users create
+        --username admin --password admin
+        --firstname Local --lastname Dev
+        --role Admin --email admin@example.com
+    restart: on-failure
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-db-volume:
+  airflow-logs:

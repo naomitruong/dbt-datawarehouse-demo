@@ -62,9 +62,9 @@ Also carried over from fv_dwh to keep modeling/architecture identical:
   the mart's `commission = 0` check uses `dbt_utils.expression_is_true`.
 - **Per-model staging yml** — each `stg_*` model has its own `.yml` declaring its `json_raw` source and
   description, matching the fv_dwh staging convention (1 yml per model).
-- **profiles.yml** — both targets use BigQuery with a **service-account keyfile**. `prod` injects the
-  connection via `--vars` (`DBT_KEYFILE` / `DBT_PROJECT` / `DBT_DATASET` / `DBT_LOCATION`); `dev` reads
-  the same values from `env_var` fallbacks so it runs from a shell.
+- **profiles.yml** — both targets use **keyless auth** (`method: oauth`). `prod` injects
+  `DBT_PROJECT` / `DBT_DATASET` / `DBT_LOCATION` via `--vars`; `dev` reads the same values from
+  `env_var` fallbacks and authenticates with your local gcloud ADC, so it runs from a shell.
 
 ## Lineage of the mart
 
@@ -83,15 +83,16 @@ omitted so the project stands alone.
 
 ## Run (BigQuery)
 
-Prerequisites: a GCP project, a BigQuery-enabled service account, and its JSON keyfile.
+Prerequisites: a GCP project with BigQuery enabled, and the gcloud CLI authenticated for local dev
+via ADC (`gcloud auth application-default login`) — no key file needed.
 
 ```bash
 # 0. install the BigQuery adapter + deps
 pip install dbt-bigquery
 dbt deps                                    # install dbt_utils / dbt_expectations / dbt_date
 
-# 1. point dbt at your project (dev target reads these env_var fallbacks)
-export DBT_KEYFILE=/abs/path/to/keyfile.json
+# 1. authenticate (keyless) + point dbt at your project (dev reads these env_var fallbacks)
+gcloud auth application-default login
 export DBT_PROJECT=my-gcp-project
 export DBT_DATASET=dwh
 export DBT_LOCATION=asia-southeast1

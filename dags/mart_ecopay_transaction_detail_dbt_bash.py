@@ -1,20 +1,14 @@
-import os
-import json
 from datetime import datetime, timedelta
 
 from airflow.decorators import dag
-from airflow.models import Variable
 from airflow.models.param import Param
 from airflow.operators.bash import BashOperator
 from airflow.timetables.trigger import CronTriggerTimetable
 
-# Standalone dbt project dir (sibling dbt/ folder), resolved relative to the file.
-DBT_PROJECT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dbt"))
-VENV_PATH = "/opt/airflow/dbt_venv/bin/activate"
-DBT_EXECUTABLE_PATH = "/opt/airflow/dbt_venv/bin/dbt"
+from dbt_helpers import DBT_TARGET, DBT_VARS, resolve_dbt_project_dir
 
-# Connection injected from an Airflow Variable (same pattern as fv_dwh ecopay DAGs).
-profile_args_dbt = json.loads(Variable.get("profile_args_dwh_dbt", "{}"))
+# dbt project dir, resolved for both the Composer (data/dbt) and local layouts.
+DBT_PROJECT_PATH = resolve_dbt_project_dir(__file__)
 
 default_args = {
     "depends_on_past": False,
@@ -48,18 +42,13 @@ def mart_ecopay_transaction_detail_dbt_bash():
 
     threads = 2
 
-    # BigQuery connection injected via --vars (consumed by the `prod` target in profiles.yml).
-    # The Airflow Variable `profile_args_dwh_dbt` holds: keyfile / project / dataset / location.
-    var_string = (
-        f'{{"DBT_KEYFILE":"{profile_args_dbt["keyfile"]}","DBT_PROJECT":"{profile_args_dbt["project"]}",'
-        f'"DBT_DATASET":"{profile_args_dbt["dataset"]}","DBT_LOCATION":"{profile_args_dbt["location"]}"}}'
-    )
-    profiles_path = DBT_PROJECT_PATH
-
+    # BigQuery connection injected via --vars (consumed by the `prod` target in
+    # profiles.yml). Target is `prod` on Composer, `dev` on local Airflow (via
+    # the `dbt_target` Variable). Auth: Composer SA (ADC) or a mounted keyfile.
     bash_cmd_test = (
-        f"source {VENV_PATH} && dbt test --project-dir {DBT_PROJECT_PATH} "
-        f"--select +models/mart/ecopay/ --vars '{var_string}' "
-        f"--profiles-dir {profiles_path} --target prod"
+        f"dbt test --project-dir {DBT_PROJECT_PATH} "
+        f"--select +models/mart/ecopay/ --vars '{DBT_VARS}' "
+        f"--profiles-dir {DBT_PROJECT_PATH} --target {DBT_TARGET}"
     )
     dbt_run_mart_test = BashOperator(
         task_id="dbt_run_mart_test_ecopay",
@@ -67,9 +56,9 @@ def mart_ecopay_transaction_detail_dbt_bash():
     )
 
     bash_cmd_run = (
-        f"source {VENV_PATH} && dbt run --project-dir {DBT_PROJECT_PATH} "
-        f"--select +models/mart/ecopay/ --vars '{var_string}' "
-        f"--profiles-dir {profiles_path} --target prod --threads {threads}"
+        f"dbt run --project-dir {DBT_PROJECT_PATH} "
+        f"--select +models/mart/ecopay/ --vars '{DBT_VARS}' "
+        f"--profiles-dir {DBT_PROJECT_PATH} --target {DBT_TARGET} --threads {threads}"
         "{{ ' --full-refresh' if params.full_refresh else '' }}"
     )
     dbt_run_mart = BashOperator(
@@ -77,6 +66,7 @@ def mart_ecopay_transaction_detail_dbt_bash():
         bash_command=bash_cmd_run,
     )
 
+    # Preserved from the original DAG: the two tasks are independent (no >>).
     dbt_run_mart_test
     dbt_run_mart
 
