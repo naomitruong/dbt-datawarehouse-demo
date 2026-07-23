@@ -23,6 +23,10 @@ GMV and service fees, joined to the merchant/store and to the salesman's managem
 Models are grouped by layer first, then by source system, and each layer maps to its own BigQuery
 dataset:
 
+![Incremental data flow from the json_raw CDC source through the staging, core and mart datasets into Looker Studio](DWH%20Incremental%20Data%20Flow-architecture.png)
+
+What each layer does:
+
 ```
 json_raw (landing, JSON)
       |
