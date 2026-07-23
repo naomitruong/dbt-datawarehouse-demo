@@ -32,6 +32,9 @@ x-airflow-common: &airflow-common
     # Airflow Variables the DAGs read at run time (via AIRFLOW_VAR_<KEY>).
     AIRFLOW_VAR_DBT_TARGET: dev
     AIRFLOW_VAR_PROFILE_ARGS_DWH_DBT: '{"project":"${GCP_PROJECT}","dataset":"${DBT_DATASET:-dwh}","location":"${DBT_LOCATION:-asia-southeast1}"}'
+    # Telegram failure alerts (on_failure_callback). Leave blank to disable.
+    AIRFLOW_VAR_TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    AIRFLOW_VAR_TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
   volumes:
     - ../dags:/opt/airflow/dags
     - ../dbt:/opt/airflow/dbt

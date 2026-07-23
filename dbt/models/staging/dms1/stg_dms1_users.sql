@@ -1,7 +1,7 @@
 {{
     config(
         materialized='incremental',
-        incremental_strategy='append',
+        incremental_strategy='merge',
         tags=['dms', 'dms-v1', 'staging', 'users']
     )
 }}
@@ -41,7 +41,7 @@ SELECT
     {{ extract_json('data', 'group.$oid') }} as group_id,
     {{ extract_json('data', 'group_chats', 'JSONB') }} as group_chats,
     {{ extract_json('data', 'group_info', 'JSONB') }} as group_info,
-    {{ extract_json('data', 'groups', 'JSONB') }} as groups,
+    {{ extract_json('data', 'groups', 'JSONB') }} as `groups`,  -- reserved word → backticked
     {{ extract_json('data', 'groups_info', 'JSONB') }} as groups_info,
     {{ extract_json('data', 'histories_role_changed', 'JSONB') }} as histories_role_changed,
     {{ extract_json('data', 'history_resource') }} as history_resource,

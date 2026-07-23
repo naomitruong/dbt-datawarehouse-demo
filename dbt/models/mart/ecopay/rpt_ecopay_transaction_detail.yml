@@ -1,0 +1,49 @@
+version: 2
+
+models:
+  - name: rpt_ecopay_transaction_detail
+    description: >
+      BI reporting view over dwh_ecopay_transaction_detail for Looker Studio. A thin, no-logic
+      aperture that exposes a stable, BI-friendly column contract, adds transaction_day (DATE) for
+      date controls, and omits PII (phone numbers) and technical audit columns. The mart remains the
+      source of truth.
+    columns:
+      - name: transid
+        description: "Ecopay transaction identifier (grain: one row per transaction)."
+        tests:
+          - not_null
+          - unique
+      - name: transaction_date
+        description: "Partner payment timestamp (partner_payment_at)."
+      - name: transaction_day
+        description: "DATE(transaction_date) — date dimension for BI date-range controls / time series."
+        tests:
+          - not_null
+      - name: merchant_created_date
+        description: "Merchant record creation timestamp."
+      - name: merchant_onboarding_date
+        description: "Merchant onboarding timestamp."
+      - name: merchant_name
+        description: "Merchant display name."
+      - name: merchant_code
+        description: "Merchant code."
+      - name: merchant_transaction_code
+        description: "Merchant-side transaction code."
+      - name: agent_name
+        description: "Direct manager (agent) name."
+      - name: agent_phone
+        description: "Direct manager (agent) contact phone — kept for the revenue report."
+      - name: salesman_name
+        description: "Salesman display name."
+      - name: salesman_phone
+        description: "Salesman contact phone."
+      - name: hierarchy_phone
+        description: "Full phone chain of the salesman's management hierarchy."
+      - name: gmv
+        description: "Gross merchandise value of the transaction."
+        tests:
+          - not_null
+      - name: services_fee
+        description: "Service fee charged on the transaction."
+      - name: commission
+        description: "Commission amount (0 for this flow)."

@@ -1,6 +1,8 @@
+{# BigQuery has no 'append' strategy; merge without a unique_key inserts all
+   selected rows (append-only) — the intended staging behavior. #}
 {{ config(
     materialized='incremental',
-    incremental_strategy='append',
+    incremental_strategy='merge',
     tags=['ecopay', 'staging', 'stores']
 ) }}
 

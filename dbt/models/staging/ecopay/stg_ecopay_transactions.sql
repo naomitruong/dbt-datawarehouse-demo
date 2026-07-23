@@ -1,7 +1,7 @@
 {{ 
     config(
         materialized='incremental',
-        incremental_strategy='append',
+        incremental_strategy='merge',
         tags=['ecopay', 'staging', 'transations']
     ) 
 }}

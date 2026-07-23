@@ -1,106 +1,98 @@
-# dbt Data Warehouse Demo — Ecopay Transaction Detail (BigQuery)
+# dbt Data Warehouse Demo: Ecopay Transaction Detail (BigQuery)
 
-An end-to-end analytics-engineering demo that ingests Debezium/Mongo-style CDC documents and
-transforms them through a layered **source → staging → core → mart** pipeline on **Google BigQuery**,
-orchestrated with **Apache Airflow** and modeled with **dbt Core**.
+A small warehouse built on BigQuery that takes Debezium/Mongo style CDC documents and pushes them
+through four layers (source, staging, core, mart) with dbt Core, scheduled by Airflow.
 
-The flagship deliverable is the `dwh_ecopay_transaction_detail` mart: per-transaction GMV and service
-fees enriched with the merchant/store and the salesman's management hierarchy.
-
----
+The model everything else exists for is `dwh_ecopay_transaction_detail`: one row per transaction with
+GMV and service fees, joined to the merchant/store and to the salesman's management chain.
+`rpt_ecopay_transaction_detail` sits on top of it as a thin view for BI.
 
 ## Tech stack
 
 | Layer | Choice | Notes |
 |---|---|---|
-| **Transformation** | dbt Core (`dbt-bigquery`) | Layered models, custom materialization, macros |
-| **Cloud data warehouse** | Google BigQuery | Datasets per layer; `JSON` landing column |
-| **Ingestion (landing)** | Debezium/Mongo CDC → `json_raw.*` | Simulated locally by a seed script |
-| **Orchestration** | Apache Airflow | Timezone-aware DAGs, connection via Airflow Variable |
-| **BI / Analytics** | Connect directly to the `mart` dataset | e.g. Looker Studio / Metabase on `dwh_ecopay_transaction_detail` |
-
----
+| Transformation | dbt Core (`dbt-bigquery`) | Layered models, a custom materialization, JSON macros |
+| Warehouse | Google BigQuery | One dataset per layer, `JSON` landing column |
+| Ingestion (landing) | Debezium/Mongo CDC into `json_raw.*` | Simulated locally by a seed script |
+| Orchestration | Apache Airflow | Timezone aware DAGs, connection from an Airflow Variable |
+| CI | GitHub Actions | SQLFluff, `dbt parse`, keyless auth to BigQuery via WIF |
+| BI | Reads the `mart` dataset directly | Looker Studio on `rpt_ecopay_transaction_detail` |
 
 ## Architecture
 
-Layers are organized `source → staging → core → mart`, grouped by source system, **one BigQuery
-dataset per layer**:
+Models are grouped by layer first, then by source system, and each layer maps to its own BigQuery
+dataset:
 
 ```
 json_raw (landing, JSON)
-      │
-      ▼
-staging/   stg_*   incremental append, JSON parsed with extract_json* macros
-      │
-      ▼
-core/      dim_*   materialized_deduplicate (latest row per id by ts_ms, via MERGE + QUALIFY)
-      │
-      ▼
-mart/      dwh_* / dm_*   incremental merge
+      |
+      v
+staging/   stg_*   incremental append, JSON parsed with the extract_json* macros
+      |
+      v
+core/      dim_*   materialized_deduplicate (latest row per id by ts_ms, MERGE + QUALIFY)
+      |
+      v
+mart/      dwh_* / dm_*   incremental merge, plus rpt_* views for BI
 ```
 
-### Lineage of the mart
+Lineage of the mart:
 
 ```
-json_raw.ecopay_ecopay_transactions → stg_ecopay_transactions → dim_ecopay_transactions ─┐
-json_raw.ecopay_ecopay_stores       → stg_ecopay_stores       → dim_ecopay_stores       ─┼─► dwh_ecopay_transaction_detail
-json_raw.dms1_users → stg_dms1_users → dim_dms1_users → dm_dms1_user_manager_phones ─────┘
+json_raw.ecopay_ecopay_transactions -> stg_ecopay_transactions -> dim_ecopay_transactions -+
+json_raw.ecopay_ecopay_stores       -> stg_ecopay_stores       -> dim_ecopay_stores       -+-> dwh_ecopay_transaction_detail -> rpt_ecopay_transaction_detail
+json_raw.dms1_users -> stg_dms1_users -> dim_dms1_users -> dm_dms1_user_manager_phones ----+
 ```
 
-`dm_dms1_user_manager_phones` resolves each user's full manager phone chain with a **recursive CTE**;
-the mart joins it to the ecopay store's `sale_info.phone` to attach salesman/agent names and phones.
-
----
+`dm_dms1_user_manager_phones` walks each user's manager chain with a recursive CTE. The mart joins it
+on the ecopay store's `sale_info.phone` to attach salesman and agent names and phones.
 
 ## Repository layout
 
 ```
 .
-├── dbt/                                  # dbt Core project  (see dbt/README.md for details)
-│   ├── profiles.yml                      # BigQuery (method: oauth); dev via gcloud ADC + env_var, prod via --vars
-│   ├── dbt_project.yml                   # layer → dataset mapping (staging/core/mart)
-│   ├── packages.yml                      # dbt_utils, dbt_expectations (+ dbt_date transitive)
+├── dbt/                                  # dbt Core project (details in dbt/README.md)
+│   ├── profiles.yml                      # BigQuery, method: oauth. dev = gcloud ADC + env_var, prod = --vars
+│   ├── dbt_project.yml                   # layer to dataset mapping
+│   ├── packages.yml                      # dbt_utils, dbt_expectations (dbt_date comes along)
 │   ├── macros/
-│   │   ├── extract_json_data.sql         # BigQuery JSON extraction (JSON_VALUE / JSON_QUERY)
-│   │   ├── materialized_deduplicate.sql  # custom materialization (MERGE + QUALIFY dedup)
-│   │   └── get_custom_schema.sql         # dataset resolution per target (prod vs dev)
+│   │   ├── extract_json_data.sql         # JSON_VALUE / JSON_QUERY helpers
+│   │   ├── materialized_deduplicate.sql  # custom materialization, MERGE + QUALIFY dedup
+│   │   └── get_custom_schema.sql         # dataset naming per target
 │   ├── models/
-│   │   ├── staging/{ecopay,dms1}/        # stg_*  (incremental append)
-│   │   ├── core/{ecopay,dms1}/           # dim_*  (materialized_deduplicate)
-│   │   └── mart/{ecopay,dms1}/           # dwh_* / dm_*  (incremental)
-│   ├── tests/data_test/ecopay/           # singular data tests (transformation invariants)
+│   │   ├── staging/{ecopay,dms1}/        # stg_*, incremental append
+│   │   ├── core/{ecopay,dms1}/           # dim_*, materialized_deduplicate
+│   │   └── mart/{ecopay,dms1}/           # dwh_* / dm_* incremental, rpt_* views
+│   ├── tests/data_test/ecopay/           # singular tests for transformation invariants
 │   └── seeds_local/
-│       └── 00_json_raw_seed_bigquery.sql # one-off bootstrap of the json_raw landing dataset
-├── dags/                                 # Airflow DAGs (dev + prod) for the ecopay mart
-├── required.txt                          # assignment requirements (stack constraints)
-└── README.md                             # you are here
+│       └── 00_json_raw_seed_bigquery.sql # one off bootstrap of the json_raw landing dataset
+├── dags/                                 # Airflow DAGs (dev + prod) and shared helpers
+├── local/                                # Docker Compose Airflow for local runs
+├── .github/workflows/                    # CI: lint and BigQuery connectivity check
+├── required.txt                          # assignment requirements
+└── README.md
 ```
-
----
 
 ## Prerequisites
 
-- A **GCP project** with the BigQuery API enabled.
-- The **gcloud CLI**, authenticated for local dev with Application Default
-  Credentials: `gcloud auth application-default login` — **no key file needed**.
-  Your account needs BigQuery Data Editor + Job User on the project.
+- A GCP project with the BigQuery API enabled.
+- The gcloud CLI, authenticated locally with `gcloud auth application-default login`. No key file is
+  needed. Your account needs BigQuery Data Editor and Job User on the project.
 - Python 3.12 and `dbt-bigquery` (`pip install dbt-bigquery`).
-- (Optional) `bq` CLI from the Google Cloud SDK to run the seed script.
+- Optional: the `bq` CLI to run the seed script.
 
----
-
-## Setup & run (local `dev` target)
+## Setup and run (local `dev` target)
 
 ```bash
 cd dbt
 
-# 1. install adapter + dbt packages
+# 1. install the adapter and dbt packages
 pip install dbt-bigquery
 dbt deps
 
-# 2. authenticate (keyless, via gcloud ADC) + point dbt at your project
+# 2. authenticate (keyless, gcloud ADC) and point dbt at your project
 gcloud auth application-default login
-export DBT_PROJECT=your-gcp-project    # the dev target reads these env_var fallbacks
+export DBT_PROJECT=your-gcp-project    # the dev target falls back to these env vars
 export DBT_DATASET=dwh
 export DBT_LOCATION=asia-southeast1
 
@@ -108,62 +100,71 @@ export DBT_LOCATION=asia-southeast1
 bq query --use_legacy_sql=false --project_id="$DBT_PROJECT" --location="$DBT_LOCATION" \
   < seeds_local/00_json_raw_seed_bigquery.sql
 
-# 4. build the whole lineage → datasets dwh_staging / dwh_core / dwh_mart
+# 4. build everything into dwh_staging / dwh_core / dwh_mart
 dbt build --profiles-dir .
 ```
 
-> To run the same pipeline through a **local Airflow** (Docker) instead of the
-> dbt CLI, see [`local/README.md`](local/README.md) — same keyless ADC auth.
+To run the same pipeline through a local Airflow in Docker instead of the dbt CLI, see
+[`local/README.md`](local/README.md). Same keyless ADC auth.
 
 ### Connection configuration
 
-| Target | Runs where | How the 4 vars are supplied |
-|---|---|---|
-| `dev` | your machine / CLI | keyless gcloud ADC + `export DBT_PROJECT / DBT_DATASET / DBT_LOCATION` (or the defaults in `profiles.yml`) |
-| `prod` | Airflow | Airflow Variable `profile_args_dwh_dbt` (JSON) → injected by the DAG as `--vars` |
+The `dev` target runs from your machine and reads `DBT_PROJECT`, `DBT_DATASET` and `DBT_LOCATION`
+from the environment (or the defaults in `profiles.yml`), with gcloud ADC for auth. The `prod` target
+runs under Airflow and gets the same values from the Airflow Variable `profile_args_dwh_dbt` (a JSON
+blob), which the DAG passes down as `--vars`.
 
-On BigQuery a dbt "schema" is a **dataset**. `macros/get_custom_schema.sql` resolves them per target:
-`prod` → clean names (`staging` / `core` / `mart`); `dev` → `{dataset}_{layer}` (e.g. `dwh_staging`).
-
----
+A dbt "schema" is a BigQuery dataset here. `macros/get_custom_schema.sql` names them per target:
+`prod` gets the clean names (`staging`, `core`, `mart`), `dev` gets `{dataset}_{layer}`, for example
+`dwh_staging`.
 
 ## Data quality tests
 
-Run with `dbt test` (included in `dbt build`).
+Run with `dbt test`, or as part of `dbt build`.
 
-- **Schema tests** (in `*.yml`): `not_null` / `unique` on `dwh_ecopay_transaction_detail.transid`,
-  `not_null` on `gmv` and the load timestamps, `dbt_utils.expression_is_true` on `commission = 0`;
-  `not_null` / `unique` on `dm_dms1_user_manager_phones.user_phone`; `not_null` + `accepted_values`
-  on the CDC `op` column of the ecopay staging model.
-- **Singular data tests** (`dbt/tests/data_test/ecopay/`): enforce transformation invariants —
-  one merchant per store, and transactions must carry the store's `merchant_code`.
+Schema tests live next to the models in `*.yml`: `not_null` and `unique` on
+`dwh_ecopay_transaction_detail.transid`, `not_null` on `gmv` and the load timestamps,
+`dbt_utils.expression_is_true` for `commission = 0`, `not_null` and `unique` on
+`dm_dms1_user_manager_phones.user_phone`, and `not_null` plus `accepted_values` on the CDC `op`
+column in ecopay staging.
 
----
+Two singular tests in `dbt/tests/data_test/ecopay/` cover invariants the schema tests cannot express:
+a store belongs to exactly one merchant, and every transaction carries its store's `merchant_code`.
 
 ## Orchestration (Airflow)
 
-DAGs in [`dags/`](dags/) build the mart plus everything upstream via the `+models/mart/ecopay/` selector:
+The DAGs in [`dags/`](dags/) build the mart and everything upstream of it through the
+`+models/mart/ecopay/` selector:
 
-- `mart_ecopay_transaction_detail_dbt_bash.py` — dev: `dbt test` + `dbt run`, `0 6` Asia/Ho_Chi_Minh.
-- `prod_mart_ecopay_transaction_detail_dbt_bash.py` — prod: `dbt deps && dbt run`, `0 5` Asia/Ho_Chi_Minh.
+- `mart_ecopay_transaction_detail_dbt_bash.py`, dev: `dbt test` then `dbt run`, daily at 06:00
+  Asia/Ho_Chi_Minh.
+- `prod_mart_ecopay_transaction_detail_dbt_bash.py`, prod: `dbt deps && dbt run`, daily at 05:00
+  Asia/Ho_Chi_Minh.
 
-Both inject the BigQuery connection from the Airflow Variable `profile_args_dwh_dbt` (JSON with
-`keyfile` / `project` / `dataset` / `location`) as `--vars` — no secrets in the repo. A `full_refresh`
-DAG param toggles `--full-refresh`.
+Both read the BigQuery connection from the Airflow Variable `profile_args_dwh_dbt` and pass it as
+`--vars`, so no secrets sit in the repo. A `full_refresh` DAG param toggles `--full-refresh`, and
+failures go to Telegram through `notify_telegram_on_failure` in `dags/dbt_helpers.py`.
 
----
+## CI/CD
+
+Two GitHub Actions workflows run on pull requests to `main` and on push:
+
+- `ci-lint.yml`: SQLFluff over the project, `dbt deps` and `dbt parse` to catch broken refs and Jinja,
+  and `py_compile` on the DAG files.
+- `ci-dbt.yml`: authenticates to GCP with Workload Identity Federation (no service account keys),
+  then checks BigQuery connectivity and runs `dbt deps` / `dbt parse`.
+
+Next step would be a `ci` target building into a scratch dataset on each pull request, so schema and
+data tests run against real data before merge.
 
 ## Mapping to `required.txt`
 
 | Requirement | How it is met |
 |---|---|
-| Transformation = **dbt Core or Cloud** | dbt Core with the `dbt-bigquery` adapter |
-| **Cloud data warehouse** | Google BigQuery |
-| **BI tool connected directly** to warehouse models | Point Looker Studio / Metabase at the `mart` dataset (`dwh_ecopay_transaction_detail`) |
-| ≥ 1 **incremental** model | `dwh_ecopay_transaction_detail`, `dm_dms1_user_manager_phones` (incremental merge) + all `stg_*` (incremental append) |
-| ≥ 1 **dbt test** | Schema tests in `*.yml` + 2 singular data tests |
-| Data ingestion working | `json_raw` landing tables (Debezium/Mongo shape), seeded locally by the bootstrap script |
-
-> **CI/CD & release process:** not yet wired up in this repo. Recommended next step: a GitHub Actions
-> workflow running `dbt build --target ci` against a scratch dataset on pull requests, with a
-> branch-per-feature → main promotion flow.
+| Transformation with dbt Core or Cloud | dbt Core with the `dbt-bigquery` adapter |
+| Cloud data warehouse | Google BigQuery |
+| BI tool connected directly to warehouse models | Looker Studio on `rpt_ecopay_transaction_detail` in the `mart` dataset |
+| At least one incremental model | `dwh_ecopay_transaction_detail` and `dm_dms1_user_manager_phones` (incremental merge), plus every `stg_*` (incremental append) |
+| At least one dbt test | Schema tests in `*.yml` plus 2 singular data tests |
+| Working data ingestion | `json_raw` landing tables in Debezium/Mongo shape, seeded locally by the bootstrap script |
+| CI/CD and release process | GitHub Actions: lint, `dbt parse`, keyless WIF auth to BigQuery |

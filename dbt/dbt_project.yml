@@ -16,9 +16,6 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
-# Layer -> schema mapping mirrors fv_dwh: staging/core/mart each land in their own schema.
-# Materialization is declared per-model (staging: incremental append; core: materialized_deduplicate;
-# mart: incremental), matching the fv_dwh convention, so it is NOT set here.
 models:
   dwh_ecopay_transaction_detail:
     staging:

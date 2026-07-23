@@ -1,17 +1,15 @@
 {#-
   BigQuery JSON extraction helpers (ported from the Postgres extract_json_* macros).
-
-  The landing `data` column is BigQuery JSON (see the json_raw seed). Paths are dot-separated,
-  e.g. `_id.$oid` or `sale_info.phone`; they are compiled to a bracket-quoted JSONPath so keys
-  containing `$` (Mongo/Debezium `$oid` / `$date`) are handled safely.
+  Paths are dot-separated, e.g. `_id.$oid` or `sale_info.phone`.
 -#}
 
+{#- `a.b` -> `$."a"."b"`. Double quotes keep keys with `$` (Mongo `$oid` / `$date`)
+    safe without terminating the single-quoted SQL string around the path. -#}
 {%- macro _json_path(path) -%}
 {%- set keys = path.split('.') -%}
-${%- for key in keys -%}['{{ key }}']{%- endfor -%}
+${%- for key in keys -%}."{{ key }}"{%- endfor -%}
 {%- endmacro -%}
 
-{#- Map a Postgres-style type hint to a BigQuery type. -#}
 {%- macro _bq_type(data_type) -%}
 {%- set t = data_type | upper -%}
 {%- if 'JSON' in t -%}JSON
@@ -53,8 +51,8 @@ CASE WHEN {{ raw }} IS NULL OR NOT REGEXP_CONTAINS({{ raw }}, r'^[0-9]+\.?[0-9]*
 END
 {%- endmacro -%}
 -------------------------------------------
-{#- Alias kept for parity with the Postgres macro set. On BigQuery TIMESTAMP is an instant (UTC),
-    so the timezone / no-timezone variants are equivalent. -#}
+{#- Alias for parity with the Postgres macros: BigQuery TIMESTAMP is always UTC,
+    so both variants are equivalent. -#}
 {%- macro extract_json_timestamp(json_column, path, timestamps_format='ms') -%}
 {{ extract_json_timestamp_no_timezone(json_column, path, timestamps_format) }}
 {%- endmacro -%}

@@ -4,7 +4,10 @@ sources:
   - name: json_raw
     tables:
       - name: ecopay_ecopay_stores
-
+    loaded_at_field: inserted_at        # cột timestamp để đo độ tươi
+    freshness:
+      warn_after:  {count: 12, period: hour}   # >12h chưa có data mới → cảnh báo
+      error_after: {count: 24, period: hour}    # >24h → lỗi, chặn build
 models:
   - name: stg_ecopay_stores
     description: This model contains data about ecopay stores

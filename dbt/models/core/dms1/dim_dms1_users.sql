@@ -42,7 +42,7 @@ SELECT
     group_id,
     group_chats,
     group_info,
-    groups,
+    `groups`,  -- reserved word → backticked
     groups_info,
     histories_role_changed,
     history_resource,

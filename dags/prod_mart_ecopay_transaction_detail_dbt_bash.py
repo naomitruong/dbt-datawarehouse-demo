@@ -5,7 +5,12 @@ from airflow.models.param import Param
 from airflow.operators.bash import BashOperator
 from airflow.timetables.trigger import CronTriggerTimetable
 
-from dbt_helpers import DBT_TARGET, DBT_VARS, resolve_dbt_project_dir
+from dbt_helpers import (
+    DBT_TARGET,
+    DBT_VARS,
+    notify_telegram_on_failure,
+    resolve_dbt_project_dir,
+)
 
 # dbt project dir, resolved for both the Composer (data/dbt) and local layouts.
 DBT_PROJECT_PATH = resolve_dbt_project_dir(__file__)
@@ -18,6 +23,7 @@ default_args = {
     "max_active_runs": 1,
     "retries": 0,
     "retry_delay": timedelta(minutes=5),
+    "on_failure_callback": notify_telegram_on_failure,
 }
 
 
