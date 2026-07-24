@@ -1,0 +1,24 @@
+[sqlfluff]
+# Jinja (not the dbt templater) so `sqlfluff lint` needs no warehouse credentials
+# and runs in seconds on a PR. dbt builtins (ref/source/config/is_incremental/...)
+# are provided by sqlfluff out of the box.
+templater = jinja
+dialect = bigquery
+max_line_length = 120
+
+# This gate is about correctness, not house style: templating errors (TMP) and
+# unparsable SQL (PRS) fail the build -- the bug class CI is here to catch.
+# The rules below are style-only and are currently violated by the generated-style
+# staging models (one macro call per column). Tighten by removing entries here and
+# running `sqlfluff fix` on the affected models.
+exclude_rules = CP01, CP02, CP03,
+    LT01, LT02, LT04, LT05, LT08, LT12,
+    AL01, AL02, AL03, AL09,
+    RF02, RF04,
+    ST06, ST09,
+    CV02
+
+[sqlfluff:templater:jinja]
+# Individual files, not the whole macros/ dir: materialized_deduplicate.sql is a dbt
+# `{% materialization %}` block, which plain Jinja cannot parse.
+load_macros_from_path = dbt/macros/extract_json_data.sql,dbt/macros/get_custom_schema.sql
