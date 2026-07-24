@@ -28,12 +28,14 @@ jobs:
 
       - name: dbt deps
         run: dbt deps
+        working-directory: dbt
 
       - name: dbt parse
-        run: dbt parse
+        run: dbt parse --profiles-dir . --target dev
+        working-directory: dbt
 
       - name: SQLFluff Lint
-        run: sqlfluff lint .
+        run: sqlfluff lint dbt/models dbt/tests
 
       - name: Check DAG imports
         run: |

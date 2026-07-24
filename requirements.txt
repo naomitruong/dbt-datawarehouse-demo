@@ -1,0 +1,5 @@
+# CI / local dev dependencies.
+# Runtime deps for Cloud Composer live in composer/requirements.txt -- keep the
+# dbt-bigquery pin in sync with that file so CI parses what prod runs.
+dbt-bigquery==1.12.0
+sqlfluff==3.4.2

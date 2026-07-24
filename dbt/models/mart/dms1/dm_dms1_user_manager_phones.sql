@@ -1,6 +1,3 @@
-{# Full rebuild (not incremental): BigQuery forbids WITH RECURSIVE inside the
-   subquery an incremental MERGE would wrap this model in, and a recursive
-   hierarchy is best recomputed wholesale from the dimension. #}
 {{
     config(
         materialized='table',

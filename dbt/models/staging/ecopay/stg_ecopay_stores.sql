@@ -1,12 +1,9 @@
-{# BigQuery has no 'append' strategy; merge without a unique_key inserts all
-   selected rows (append-only) — the intended staging behavior. #}
 {{ config(
     materialized='incremental',
     incremental_strategy='merge',
     tags=['ecopay', 'staging', 'stores']
 ) }}
 
-{# Filter data BEFORE expensive JSON processing for better performance #}
 WITH filtered_source AS (
     SELECT *
     FROM {{ source('json_raw', 'ecopay_ecopay_stores') }}
